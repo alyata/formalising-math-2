@@ -2,7 +2,7 @@ import formula
 import semantics
 import data.list.alist
 
-variables {vars : Type} [denumerable vars] {W : Type} [nonempty W]
+variables {vars : Type} [denumerable vars]
 variables {A B C : form vars}
 
 /-- A schema is the set of substitution instances of some formula A. A is called the *characteristic* formula of the schema, which is unique up to a renaming of variables. -/
@@ -126,14 +126,14 @@ begin
   sorry,
 end
 
-def eval_schema (M : model vars W) (S : set (form vars)) := ∀ B ∈ S, M ⊩ B
+def eval_schema (M : model vars) (S : set (form vars)) := ∀ B ∈ S, M ⊩ B
 notation M ` ⊨ ` S := eval_schema M S
 notation M ` ⊭ ` S := ¬ eval_schema M S
 
-def valid_schema (W : Type) [nonempty W] (S : set (form vars)) :=
-∀ M : model vars W, M ⊨ S
+def valid_schema (S : set (form vars)) :=
+∀ M : model vars, M ⊨ S
 
-example : valid_schema W (schema (□ (A ⟹ B) ⟹ □ A ⟹ □ B)) :=
+example : valid_schema (schema (□ (A ⟹ B) ⟹ □ A ⟹ □ B)) :=
 begin
   intros M C hC w,
   simp only [schema, subst.apply, set.mem_set_of_eq] at hC,
@@ -144,9 +144,9 @@ begin
   exact hAB w' hrel (hA w' hrel)
 end
 
-lemma eval_instance_iff_eval {A : form vars} {M M' : model vars W} {w : W} 
-{s : subst vars} (hR : M.F.R = M'.F.R) (hM' : ∀ x, M'.V x = {w | M@@w ⊩ s.get x}) 
-: (M@@w ⊩ s.apply A) ↔ (M'@@w ⊩ A)
+lemma eval_instance_iff_eval {A : form vars} {W : Type} [nonempty W] {R : W → W → Prop} {V V' : vars → set W} {w : W} 
+{s : subst vars} (hM' : ∀ x, V' x = {w | ⟪W, R, V⟫ @@ w ⊩ s.get x}) 
+: (⟪W, R, V⟫ @@ w ⊩ s.apply A) ↔ (⟪W, R, V'⟫ @@ w ⊩ A)
 := begin
   induction A generalizing w,
   case form.Bottom { 
@@ -170,14 +170,14 @@ lemma eval_instance_iff_eval {A : form vars} {M M' : model vars W} {w : W}
   case form.Box : A ih {
     simp only [subst.apply, eval],
     split,
-    { intros h w' hw', rw ←hR at hw', specialize h w' hw', exact ih.mp h },
-    { intros h w' hw', rw hR at hw', specialize h w' hw', exact ih.mpr h }
+    { intros h w' hw', specialize h w' hw', exact ih.mp h },
+    { intros h w' hw', specialize h w' hw', exact ih.mpr h }
   }
 end
 
 /-- This is a generalisation of tautological_instance_is_valid where we have 
 substitutions over arbitrary formulas, not just tautologies. -/
-theorem valid_schema_iff_valid : valid_schema W (schema A) ↔ valid W A :=
+theorem valid_schema_iff_valid : valid_schema (schema A) ↔ valid A :=
 begin
   split,
   -- the mp direction is easy since A must be in its own schema.
@@ -185,14 +185,18 @@ begin
   rintros hv M A' ⟨s, rfl⟩ w,
   by_contra h,
   -- We construct M' that re-assigns variables based on the truth value of their substitutions in the original model M.
-  set M' : model vars W := 
-    ⟨⟨M.F.R⟩, λ x, {w | M@@w ⊩ s.get x}⟩ with hM',
+  haveI := M.F.hnonempty,
+  set V' := λ x, {w | M@@w ⊩ s.get x} with hV',
+  set M' : model vars := 
+    ⟪M.F.W, M.F.R, V'⟫ with hM',
   have hR : M.F.R = M'.F.R := rfl,
-  have hM' : ∀ x, M'.V x = {w | M@@w ⊩ s.get x} := λ x, rfl,
+  have hM' : ∀ x, V' x = {w | ⟪M.F.W, M.F.R, M.V⟫@@w ⊩ s.get x},
+    intro x,
+    simp only [←model_ext M],
   -- Hence, whenever the substituted formula A' holds in the original model, 
   -- the pre-substituted formula A holds in our new model. This is represented
   -- by the lemma `eval_instance_iff_eval`.
-  have := (eval_instance_iff_eval hR hM').mpr (hv M' w),
+  have := (eval_instance_iff_eval hM').mpr (hv M' w),
   exact h this,
 end
 
@@ -204,7 +208,7 @@ formula breaks down when we replace validity with truth in a specific model.
 Consider the following counterexample: -/
 
 /-- At least one direction holds, since A is an instance of its own schema. -/
-theorem characteristic_true_of_schema_true {M : model vars W} 
+theorem characteristic_true_of_schema_true {M : model vars} 
   : (M ⊨ schema A) → (M ⊩ A) :=
 begin
   intros hsA w,
@@ -212,9 +216,11 @@ begin
 end
 
 /-- but consider the following model with one world: -/
-def myM : model vars unit := {
-  F := ⟨λ _ _, false⟩, -- the frame relation doesn't matter
-  V := λ x, {⟨⟩} -- every variable is true at the one and only world
+def myM : model vars := {
+  F := {
+    W := unit, -- one world only: the unit element ()
+    R := λ _ _, false }, -- the frame relation doesn't matter
+  V := λ x, {()} -- every variable is true at the one and only world ()
 }
 
 /-- This model is a counter-example for the other direction of the equivalence:
@@ -224,7 +230,7 @@ theorem characteristic_true_but_schema_not_true {p : vars}
   : (myM ⊩ ⦃p⦄) ∧ (myM ⊭ schema ⦃p⦄) :=
 begin
   split,
-  { rintro ⟨⟩, simp [eval, myM] },
+  { rintro ⟨⟩, simp [eval, myM], sorry },
   { simp only [eval_schema, not_forall, exists_prop], 
     use ⊥,
     split,
@@ -234,34 +240,35 @@ begin
 end
 
 /-- Classes of models defined by a property of their frames. -/
-def ℂ (F_prop : (W → W → Prop) → Prop) : set (model vars W) := {M | F_prop M.F.R}
+def ℂ (F_prop : ∀ {W : Type}, (W → W → Prop) → Prop) : set (model vars) := {M | F_prop M.F.R}
 
 /- The following are some example classes that contain models with particular 
 frame properties. -/
 
 /-- Models with reflexive frames -/
-def ℂ_reflexive (W : Type) [nonempty W] : set (model vars W) :=
- ℂ (λ R, ∀ w, R w w)
+def ℂ_reflexive : set (model vars) :=
+ ℂ (λ W R, ∀ w, R w w)
 
 /-- Models with transitive frames -/
-def ℂ_transitive (W : Type) [nonempty W] : set (model vars W) :=
-ℂ (λ R, ∀ w1 w2 w3, R w1 w2 ∧ R w2 w3 → R w1 w3)
+def ℂ_transitive : set (model vars) :=
+ℂ (λ W R, ∀ w1 w2 w3, R w1 w2 ∧ R w2 w3 → R w1 w3)
 
 /-- The general class of all models -/
-def ℂ_all (W : Type) [nonempty W] : set (model vars W) := ℂ (λ _, true)
+def ℂ_all : set (model vars) := ℂ (λ _ _, true)
 
 /-- It is also possible to define a restricted notion of validity to classes of 
 models. -/
-def ℂ_valid (ℂ : set (model vars W)) (A : form vars) :=
+def ℂ_valid (ℂ : set (model vars)) (A : form vars) :=
 ∀ M ∈ ℂ, M ⊩ A
 
-def ℂ_schema_valid (ℂ : set (model vars W)) (𝕊 : set (form vars)) :=
+def ℂ_schema_valid (ℂ : set (model vars)) (𝕊 : set (form vars)) :=
 ∀ M ∈ ℂ, M ⊨ 𝕊
 
 /-- We can then modify the proof of valid_schema_iff_valid to adapt it to 
 class validity, but only for classes constructed by ℂ -/
-theorem wrong_class_valid_schema_iff_class_valid {F_prop : (W → W → Prop) → Prop} 
-: ℂ_schema_valid (ℂ F_prop) (schema A) ↔ ℂ_valid (ℂ F_prop) A :=
+theorem class_valid_schema_iff_class_valid 
+{F_prop : ∀ {W : Type}, (W → W → Prop) → Prop} 
+: ℂ_schema_valid (ℂ @F_prop) (schema A) ↔ ℂ_valid (ℂ @F_prop) A :=
 begin
   split,
   -- the mp direction is easy since A must be in its own schema.
@@ -270,7 +277,7 @@ begin
   by_contra h,
   -- We construct M' that re-assigns variables based on the truth value of their
   -- substitutions in the original model M.
-  set M' : model vars W := 
+  set M' : model vars := 
     ⟨⟨M.F.R⟩, λ x, {w | M@@w ⊩ s.get x}⟩ with hM',
   have hR : M.F.R = M'.F.R := rfl,
   have hM' : ∀ x, M'.V x = {w | M@@w ⊩ s.get x} := λ x, rfl,
@@ -286,30 +293,50 @@ begin
   exact h this,
 end
 
-/-- There is a vague sense in which the formula T ≡ □ p ⟹ p "characterizes" models
-with reflexive relations. Semantically T reads that if in every accessible
-world p holds, then p holds also in this world. In general, this holds iff the 
-accessibility relation is reflexive. We can see one direction of the
-correspondence via class validity: for any model, if it is reflexive, then T
-holds in the model. -/
-theorem T_is_ℂ_valid_reflexive {p : vars} 
-: ℂ_valid (ℂ_reflexive W) (□ ⦃p⦄ ⟹ ⦃p⦄)
-:= begin
+/- There is a vague sense in which the formula R ≡ p ⟹ ◇ p "characterizes"
+models with reflexive relations. Semantically T reads that if p holds in this 
+world, then p holds in some related world. In general, this holds iff the 
+accessibility relation is reflexive, since the only world we can guarantee to
+have p hold is the current one. We can see one direction of the correspondence
+via the following theorem of validity: for any model, if it is reflexive, then R holds in the 
+model. -/
+
+theorem R_is_ℂ_valid_reflexive {p : vars} 
+: ℂ_valid ℂ_reflexive (□ ⦃p⦄ ⟹ ⦃p⦄) := 
+begin
   unfold ℂ_valid,
   intros M hM w,
-  simp only [ℂ_reflexive, set.mem_set_of_eq] at hM,
-  simp only [eval, not_forall, exists_prop],
+  simp only [ℂ_reflexive, ℂ, set.mem_set_of_eq] at hM,
+  simp only [eval, not_forall, exists_prop, set.not_not_mem],
   intros hbA,
-  apply hbA,
-  exact hM w
+  exact hbA w (hM w)
 end
 
-/- However, the converse doesn't hold: when T holds in the model, it is not 
-necessarily reflexive.-/
--- There will be a theorem here... 
+/- However, the converse doesn't hold: when R holds in a model, it is not 
+necessarily reflexive. This is because we can have specific valuations that
+make it trivial to prove the statement. So, the statement is true by virtue of the valuation, not the frame. For example, in a model where the
+antecedent p is never true. -/
+
+def myM' : model vars := {
+  F := {
+    W := unit,
+    R := λ _ _, false }, -- the frame relation doesn't matter
+  V := λ x, {} -- every variable is true at the one and only world
+}
+
+theorem R_true_in_non_reflexive_model {p : vars} : (myM' ⊩ ⦃p⦄ ⟹ ◇⦃p⦄) ∧ (myM' ∉ ℂ_reflexive) :=
+begin
+  split,
+  simp [eval, myM'],
+  simp [ℂ_reflexive, ℂ, myM']
+end
+
+/- This doesn't work because it is the frame relation that we care about, but
+we are reasoning about classes of models. Instead, we should work with classes
+of frames and work from there. This is done in src/frame_definability.lean. -/
 
 theorem K_is_ℂ_valid_all 
-  : ℂ_valid (ℂ_all W) (□ (A ⟹ B) ⟹ □ A ⟹ □ B) :=
+  : ℂ_valid ℂ_all (□ (A ⟹ B) ⟹ □ A ⟹ □ B) :=
 begin
   unfold ℂ_valid,
   intros M hM w,
@@ -320,7 +347,7 @@ begin
   exact hbAB hbA
 end
 
-example : ℂ_valid (ℂ_reflexive W) (□ (□ A ⟹ A)) :=
+example : ℂ_valid ℂ_reflexive (□ (□ A ⟹ A)) :=
 begin
   simp only [ℂ_valid, set.mem_inter_eq],
   intros M hrefl w,
@@ -331,7 +358,7 @@ begin
   exact hrefl w'
 end
 
-theorem box_class_valid_of_class_valid {C : set (model vars W)}
+theorem box_class_valid_of_class_valid {C : set (model vars)}
 (hvA : ℂ_valid C A) : ℂ_valid C (□ A) :=
 begin
   unfold ℂ_valid,
@@ -341,7 +368,7 @@ begin
   exact hvA M hMinC w',
 end
 
-theorem class_valid_subset {C C' : set (model vars W)} (hsub : C' ⊆ C) 
+theorem class_valid_subset {C C' : set (model vars)} (hsub : C' ⊆ C) 
 (hvA : ℂ_valid C A) : ℂ_valid C' A :=
 begin
   unfold ℂ_valid,

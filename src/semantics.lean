@@ -4,13 +4,17 @@ import logic.nonempty
 
 /-- A frame is a binary *accesibility* relation R on a nonempty set of *worlds*
 W. -/
-structure frame (W : Type) : Type :=
+structure frame : Type 1 :=
+  (W : Type) [hnonempty : nonempty W]
   (R : W → W → Prop)
+notation `‹` W `, ` R `›` := frame.mk W R
+
+instance frame_nonempty := frame.hnonempty
 
 /-- A model for the language of modal formulas defined above is ⟨W, R, V⟩ 
 where
 1. W is a nonempty set of *worlds*,
-2. R is a binary *accesibility* relation on W,
+2. R is a binary *accessibility* relation on W,
 3. V is a truth assignment of each variable x to the set worlds in which it
    is true.
 (W, R) alone without the truth assignment constitutes a `frame`. This separation
@@ -19,15 +23,23 @@ will become important when we talk about frame definability.
 The nonemptiness of W will be assumed in the theorems, not the definition.
 
 Note: W is given as an argument to deal with type universe issues. -/
-structure model (vars : Type) (W : Type) : Type :=
-  (F : frame W)
-  (V : vars → set W)
+structure model (vars : Type) : Type 1 :=
+  (F : frame)
+  (V : vars → set F.W)
+notation `⟪` W `, ` R `, ` V `⟫` := model.mk (frame.mk W R) V 
+
+lemma model_ext {vars : Type} (M : model vars) : M = ⟪M.F.W, M.F.R, M.V⟫ :=
+begin
+  rcases M with ⟨⟨W, R⟩, V⟩,
+  simp
+end
 
 variables {vars : Type} [denumerable vars] {W : Type} [nonempty W]
 variables {A B C : form vars}
 
 /-- Truth at a world -/
-def eval (M : model vars W) : W → form vars → Prop
+@[simp]
+def eval (M : model vars) : M.F.W → form vars → Prop
 | w ⊥ := false
 | w ⦃x⦄ := w ∈ M.V x
 | w (~ P) := ¬ eval w P
@@ -39,13 +51,13 @@ def eval (M : model vars W) : W → form vars → Prop
 notation M `@@` w ` ⊩ ` P := eval M w P
 notation M `@@` w ` ⊮ ` P := ¬ eval M w P
 
-theorem box_diamond_dual {M : model vars W} {w : W}
+theorem box_diamond_dual {M : model vars} {w : M.F.W}
   : (M @@ w ⊩ □ A) ↔ (M @@ w ⊩ ~ ◇ ~ A) :=
 begin
   simp [eval],
 end
 
-theorem diamond_box_dual {M : model vars W} {w : W}
+theorem diamond_box_dual {M : model vars} {w : M.F.W}
   : (M @@ w ⊩ ◇ A) ↔ (M @@ w ⊩ ~ □ ~ A) :=
 begin
   simp,
@@ -54,15 +66,15 @@ end
 notation M ` ⊩ ` P := ∀w, M @@ w ⊩ P
 notation M ` ⊮ ` P := ¬ (M ⊩ P)
 
-example {M : model vars W} : (M ⊩ A) → (M ⊮ ~ A) :=
+example {M : model vars} : (M ⊩ A) → (M ⊮ ~ A) :=
 begin
 simp only [eval, not_forall, not_not],
 intro hA,
-use classical.arbitrary W,
+use classical.choice M.F.hnonempty,
 apply hA,
 end
 
-example {M : model vars W} : (M ⊩ A ⟹ B) → (M ⊩ A) → (M ⊩ B) :=
+example {M : model vars} : (M ⊩ A ⟹ B) → (M ⊩ A) → (M ⊩ B) :=
 begin
 simp only [eval],
 intros hAB hA w,
@@ -71,7 +83,7 @@ specialize hA w,
 exact hAB hA
 end
 
-def valid (W : Type) [nonempty W] (A : form vars) := ∀ M : model vars W, M ⊩ A
+def valid (A : form vars) := ∀ M : model vars, M ⊩ A
 
 /-- A formula is modal-free if it contains no modal operator, i.e. □ -/
 def modal_free : form vars → Prop
@@ -109,7 +121,7 @@ def tautological_instance (A : form vars) :=
   tautology Afree hfree ∧ subst.apply s Afree = A
 
 lemma eval_modal_free_iff_eval {hfree : modal_free A} {s : subst vars}
-{v : vars → Prop} {M : model vars W} {w : W}
+{v : vars → Prop} {M : model vars} {w : M.F.W}
 (h : ∀ x, v x ↔ M@@w ⊩ s.get x)
   : eval_modal_free v A hfree ↔ M@@w ⊩ s.apply A :=
 begin
@@ -151,8 +163,7 @@ begin
 end
 
 /-- It is quite sensible that since a tautology is valid, all tautological instances are also valid. -/
-theorem tautological_instance_is_valid (ht : tautological_instance A) 
-  : valid W A :=
+theorem tautological_instance_is_valid (ht : tautological_instance A) : valid A :=
 begin
   -- Suppose for a contradiction that for some model M and world w,
   -- M@@w ⊭ A.
@@ -177,6 +188,6 @@ begin
 end
 
 def entails (Γ : list (form vars)) (A : form vars) : Prop := 
-∀ (M : model vars W) w, (∀ (B ∈ Γ), (M@@w ⊩ B)) → M@@w ⊩ A
+∀ (M : model vars) w, (∀ (B ∈ Γ), (M@@w ⊩ B)) → M@@w ⊩ A
 
 notation Γ ` ⊨ ` A := entails Γ A
