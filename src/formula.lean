@@ -17,7 +17,7 @@ inductive form (vars : Type) : Type
 -- get the ⊥ notation for Bottom
 -- and allow simp to use this definition
 instance {vars : Type} : has_bot (form vars) := ⟨form.Bottom⟩
-@[simp] lemma bottom_eq_bot {vars : Type} : (form.Bottom : form vars) = ⊥ := rfl
+@[simp] lemma bottom_eq_bot {vars : Type} : ⊥ = (form.Bottom : form vars) := rfl
 
 notation `⦃` x `⦄` := form.Var x
 prefix `~`:75 := form.Not
@@ -54,7 +54,7 @@ def subst.get (s : subst vars) (x : vars) : form vars :=
 
 /-- This function applies a simultaneous substitution to a formula. -/
 def subst.apply (s : subst vars) : form vars → form vars
-| ⊥        := ⊥
+| form.Bottom := form.Bottom
 | ⦃x⦄      := s.get x
 | ~ A      := ~ (subst.apply A)
 | □ A      := □ (subst.apply A)
@@ -80,7 +80,21 @@ begin
   intro y,
   induction A,
   case form.Bottom { exact hA y },
-  case form.Var    {  exfalso, have := hA A, simp at this, exact this },
+  case form.Var    { exfalso, specialize hA A, simp at hA, exact hA },
+  case form.Not    { simp [subst.apply] },
+  case form.Box    { simp [subst.apply] },
+  case form.And    { simp [subst.apply] },
+  case form.Or     { simp [subst.apply] },
+  case form.Imply  {simp [subst.apply] }
+end
+
+theorem subst.apply_not_not (s : subst vars) {A : form vars} (hA : ∀ x, A ≠ ~ x) 
+  : ∀ y, subst.apply s A ≠ ~ y :=
+begin
+  intro y,
+  induction A,
+  case form.Bottom { exact hA y },
+  case form.Var    {  },
   case form.Not    { simp [subst.apply] },
   case form.Box    { simp [subst.apply] },
   case form.And    { simp [subst.apply] },

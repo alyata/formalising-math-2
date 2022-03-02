@@ -1,23 +1,31 @@
 import formula
 import semantics
 import data.list.alist
+import data.subtype
 
 variables {vars : Type} [denumerable vars]
 variables {A B C : form vars}
 
-/-- A schema is the set of substitution instances of some formula A. A is called the *characteristic* formula of the schema, which is unique up to a renaming of variables. -/
+/-- A schema is the set of substitution instances of some formula A. A is called
+the *characteristic* formula of the schema, which is unique up to a renaming of
+variables. -/
 def schema (A : form vars) := {B | ∃s, subst.apply s A = B}
-
-universes u v
 
 /-- A renaming of variables is a mapping from variables to variables. -/
 def rename (vars : Type) [decidable_eq vars] : Type := 
-  { r : alist (λ _ : vars, vars) // 
-    ∀ x y, r.lookup x = r.lookup y → 
-           (r.lookup x).is_some → (r.lookup y).is_some → x = y }
+  { r : subst vars //
+    -- r maps only to variables
+    (∀ x, (r.lookup x).is_some → ∃ y, (⦃y⦄ ∈ r.lookup x)) ∧
+    -- r is injective
+    (∀ x y, r.lookup x = r.lookup y → 
+           (r.lookup x).is_some → (r.lookup y).is_some → x = y) }
+
+def rename.apply (r : rename vars) := subst.apply (r.val)
 
 instance : has_mem vars (rename vars) := ⟨λ x r, x ∈ r.val⟩
 instance : has_emptyc (rename vars) := ⟨⟨∅, by simp⟩⟩
+
+universes u v
 
 @[simp]
 theorem list.lookup_cons_not_mem {α : Type u} {β : α → Type v} [decidable_eq α]
@@ -41,53 +49,56 @@ begin
 end
 
 -- terrible, terrible proof
-instance rename_to_subst (vars : Type) [decidable_eq vars] 
-: has_coe (rename vars) (subst vars) :=
-  ⟨λ ⟨r, p⟩, alist.mk (list.map (sigma.map id (λ _, form.Var)) r.entries) 
-  (begin
-    cases r,
-    dsimp only,
-    induction r_entries,
-    case list.nil { simp },
-    case list.cons : head tail ih {
-      simp only [list.map, list.nodupkeys_cons] at ⊢ r_nodupkeys,
-      split,
-      { simp only [sigma.map, id.def, list.not_mem_keys],
-        intro A,
-        simp only [list.mem_map, sigma.exists, not_exists, not_and],
-        intros x rx hmemtail,
-        simp only [sigma.map, id.def, heq_iff_eq, not_and],
-        intro hx,
-        rw hx at hmemtail,
-        rw list.not_mem_keys at r_nodupkeys,
-        exfalso,
-        exact r_nodupkeys.left rx hmemtail
-      },
-      { rcases r_nodupkeys with ⟨hnmemtail, r_nodupkeys⟩,
-        apply ih r_nodupkeys,
-        intros x y hxy,
-        specialize p x y,
-        simp only [alist.lookup] at ⊢ p hxy,
-        intros hxmemtail hymemtail,
-        simp only [list.lookup_is_some, 
-                    list.keys_cons, 
-                    list.mem_cons_iff] at hxmemtail hymemtail p,
-        have hx := ne_of_mem_of_not_mem hxmemtail hnmemtail,
-        have hy := ne_of_mem_of_not_mem hymemtail hnmemtail,
-        simp [list.lookup_cons_ne _ _ hx, list.lookup_cons_ne _ _ hy] at p,
-        specialize p hxy,
-        apply p,
-        { right, exact hxmemtail },          
-        { right, exact hymemtail }
-      },
-    }
-  end)⟩
+-- instance rename_to_subst (vars : Type) [decidable_eq vars] 
+-- : has_coe (rename vars) (subst vars) := 
+-- { coe := λ ⟨r, p⟩, { 
+--     entries := list.map (sigma.map id (λ _, form.Var)) r.entries,
+--     nodupkeys := begin
+--       cases r,
+--       dsimp only,
+--       induction r_entries,
+--       case list.nil { simp },
+--       case list.cons : head tail ih {
+--         simp only [list.map, list.nodupkeys_cons] at ⊢ r_nodupkeys,
+--         split,
+--         { simp only [sigma.map, id.def, list.not_mem_keys],
+--           intro A,
+--           simp only [list.mem_map, sigma.exists, not_exists, not_and],
+--           intros x rx hmemtail,
+--           simp only [sigma.map, id.def, heq_iff_eq, not_and],
+--           intro hx,
+--           rw hx at hmemtail,
+--           rw list.not_mem_keys at r_nodupkeys,
+--           exfalso,
+--           exact r_nodupkeys.left rx hmemtail
+--         },
+--         { rcases r_nodupkeys with ⟨hnmemtail, r_nodupkeys⟩,
+--           apply ih r_nodupkeys,
+--           intros x y hxy,
+--           specialize p x y,
+--           simp only [alist.lookup] at ⊢ p hxy,
+--           intros hxmemtail hymemtail,
+--           simp only [list.lookup_is_some, 
+--                       list.keys_cons, 
+--                       list.mem_cons_iff] at hxmemtail hymemtail p,
+--           have hx := ne_of_mem_of_not_mem hxmemtail hnmemtail,
+--           have hy := ne_of_mem_of_not_mem hymemtail hnmemtail,
+--           simp [list.lookup_cons_ne _ _ hx, list.lookup_cons_ne _ _ hy] at p,
+--           specialize p hxy,
+--           apply p,
+--           { right, exact hxmemtail },          
+--           { right, exact hymemtail }
+--         },
+--       }
+--   end
+--   }
+-- }
 
 theorem schema.characteristic_unique_up_to_renaming (h : schema A = schema B) 
-  : ∃ (r₁ : rename vars), subst.apply ↑r₁ A = B :=
+  : ∃ (r₁ : rename vars), r₁.apply A = B :=
 begin
   simp [set.ext_iff, schema] at h,
-  induction A,
+  induction A generalizing B,
   case form.Bottom {
     simp [subst.apply] at ⊢ h,
     specialize h B,
@@ -95,30 +106,56 @@ begin
     exact ⟨∅, this⟩,
   },
   case form.Var {
-    with_cases { by_cases hB : ∃ b, B = ⦃b⦄ },
-    case pos {
-      rcases hB with ⟨b, rfl⟩,
-      set r : rename vars := ⟨alist.mk [⟨A, b⟩] (by simp), by {
+    cases B,
+    case form.Var : b {
+      set r : rename vars := ⟨⟨[⟨A, ⦃b⦄⟩], (by simp)⟩, by {
         simp [alist.lookup],
         intros x y hxy,
         { intros hx hy, transitivity A, exact hx, symmetry, exact hy },
       }⟩ with hr,
       use r,
-      unfold_coes,
-      simp [subst.apply, subst.get, alist.lookup, hr, rename_to_subst,
-            sigma.map, list.lookup]
+      simp [rename.apply, subst.apply, subst.get, alist.lookup, hr,
+            sigma.map, list.lookup],
     },
-    case neg {
+    all_goals {
       exfalso,
-      simp at hB,
-      specialize h ⦃A⦄,
-      cases h.mp ⟨∅, subst.apply_empty_id⟩ with _ this,
-      exact subst.apply_not_var w hB A this,
+      cases (h ⦃A⦄).mp ⟨∅, subst.apply_empty_id⟩ with s this,
+      simp only [subst.apply] at this,
+      exact this
     },
   },
-  -- I give up... its not important for the main point of this project anyway
   case form.Not : A ih {
-    sorry,
+    cases B,
+    case form.Not : b {
+      -- rcases hB with ⟨b, rfl⟩,
+      simp only [rename.apply, subst.apply] at ⊢ h,
+      -- Now we know that the variable x in h has to be of the form (~ x), which
+      -- means we can simplify it to the following:
+      have : ∀ (x : form vars), (∃ (s : subst vars), s.apply A = x) ↔ 
+                                (∃ (s : subst vars), s.apply b = x),
+        intro x,
+        specialize h (~x),
+        simp only at h,
+        exact h,
+      -- which is exactly what we need to use the ih
+      exact ih this,
+    },
+    case form.Var {
+      -- if B is a variable, then ~A cannot be substituted to become B,
+      -- but this contradicts h
+      exfalso,
+      cases (h ⦃B⦄).mpr ⟨∅, subst.apply_empty_id⟩ with s this,
+      simp only [subst.apply] at this,
+      exact this
+    },
+     all_goals {
+       -- If B is some other connective, then it cannot be
+       -- substituted to become ~A, which contradicts h
+      exfalso,
+      cases (h (~A)).mp ⟨∅, subst.apply_empty_id⟩ with s this,
+      simp only [subst.apply] at this,
+      exact this,
+    }
   },
   sorry,
   sorry,
@@ -182,21 +219,18 @@ begin
   split,
   -- the mp direction is easy since A must be in its own schema.
   { intros hv M w, exact hv M A ⟨∅, subst.apply_empty_id⟩ w },
-  rintros hv M A' ⟨s, rfl⟩ w,
+  rintros hv ⟨⟨W, hnonempty, R⟩, V⟩ A' ⟨s, rfl⟩ w,
+  resetI,
   by_contra h,
   -- We construct M' that re-assigns variables based on the truth value of their substitutions in the original model M.
-  haveI := M.F.hnonempty,
-  set V' := λ x, {w | M@@w ⊩ s.get x} with hV',
-  set M' : model vars := 
-    ⟪M.F.W, M.F.R, V'⟫ with hM',
-  have hR : M.F.R = M'.F.R := rfl,
-  have hM' : ∀ x, V' x = {w | ⟪M.F.W, M.F.R, M.V⟫@@w ⊩ s.get x},
-    intro x,
-    simp only [←model_ext M],
+  set V' := λ x, {w | ⟪W, R, V⟫@@w ⊩ s.get x} with hV',
+  set M' : model vars := ⟪W, R, V'⟫ with hM',
+  have this := congr_fun hV',
+  dsimp at this,
   -- Hence, whenever the substituted formula A' holds in the original model, 
   -- the pre-substituted formula A holds in our new model. This is represented
   -- by the lemma `eval_instance_iff_eval`.
-  have := (eval_instance_iff_eval hM').mpr (hv M' w),
+  have := (eval_instance_iff_eval this).mpr (hv M' w),
   exact h this,
 end
 
@@ -230,7 +264,7 @@ theorem characteristic_true_but_schema_not_true {p : vars}
   : (myM ⊩ ⦃p⦄) ∧ (myM ⊭ schema ⦃p⦄) :=
 begin
   split,
-  { rintro ⟨⟩, simp [eval, myM], sorry },
+  { rintro ⟨⟩, simp [myM.V p, eval], },
   { simp only [eval_schema, not_forall, exists_prop], 
     use ⊥,
     split,
@@ -273,23 +307,24 @@ begin
   split,
   -- the mp direction is easy since A must be in its own schema.
   { intros hv M hMℂ w, exact hv M hMℂ A ⟨∅, subst.apply_empty_id⟩ w },
-  rintros hv M hMℂ A' ⟨s, rfl⟩ w,
+  rintros hv ⟨⟨W, _, R⟩, V⟩ hMℂ A' ⟨s, rfl⟩ w,
+  resetI,
   by_contra h,
   -- We construct M' that re-assigns variables based on the truth value of their
   -- substitutions in the original model M.
-  set M' : model vars := 
-    ⟨⟨M.F.R⟩, λ x, {w | M@@w ⊩ s.get x}⟩ with hM',
-  have hR : M.F.R = M'.F.R := rfl,
-  have hM' : ∀ x, M'.V x = {w | M@@w ⊩ s.get x} := λ x, rfl,
+  set V' := λ x, {w | ⟪W, R, V⟫@@w ⊩ s.get x} with hV',
+  set M' : model vars := ⟪W, R, V'⟫ with hM',
   -- This wouldn't work if we use arbitrary sets as classes since we'd know 
-  -- nothing about what frames are included in the set
-  have hM'ℂ : M' ∈ (@ℂ vars _ W _ F_prop), { 
+  -- nothing about what frames are included in the set. But we know that ℂ
+  -- aserts some kind of property on R which we know to be preserved since we
+  -- use the same R.
+  have hM'ℂ : M' ∈ (@ℂ vars _ @F_prop), { 
     simp only [ℂ, set.mem_set_of_eq], exact hMℂ
   },
   -- Hence, whenever the substituted formula A' holds in the original model, 
   -- the pre-substituted formula A holds in our new model. This is represented
   -- by the lemma `eval_instance_iff_eval`.
-  have := (eval_instance_iff_eval hR hM').mpr (hv M' hM'ℂ w),
+  have := (eval_instance_iff_eval (congr_fun hV')).mpr (hv M' hM'ℂ w),
   exact h this,
 end
 
@@ -324,11 +359,12 @@ def myM' : model vars := {
   V := λ x, {} -- every variable is true at the one and only world
 }
 
-theorem R_true_in_non_reflexive_model {p : vars} : (myM' ⊩ ⦃p⦄ ⟹ ◇⦃p⦄) ∧ (myM' ∉ ℂ_reflexive) :=
+theorem R_true_in_non_reflexive_model {p : vars} 
+: (myM' ⊩ ⦃p⦄ ⟹ ◇⦃p⦄) ∧ (myM' ∉ @ℂ_reflexive vars _) :=
 begin
   split,
-  simp [eval, myM'],
-  simp [ℂ_reflexive, ℂ, myM']
+  { rintro w ⟨⟩ }, -- ⟨⟩ : false allows to prove anything
+  { simp [ℂ_reflexive, ℂ, myM'], }
 end
 
 /- This doesn't work because it is the frame relation that we care about, but

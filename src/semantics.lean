@@ -1,5 +1,4 @@
 import formula
-
 import logic.nonempty
 
 /-- A frame is a binary *accesibility* relation R on a nonempty set of *worlds*
@@ -28,9 +27,11 @@ structure model (vars : Type) : Type 1 :=
   (V : vars → set F.W)
 notation `⟪` W `, ` R `, ` V `⟫` := model.mk (frame.mk W R) V 
 
-lemma model_ext {vars : Type} (M : model vars) : M = ⟪M.F.W, M.F.R, M.V⟫ :=
+@[ext]
+lemma model_ext {vars : Type} (M : model vars)
+: M = model.mk (frame.mk M.F.W M.F.R) M.V :=
 begin
-  rcases M with ⟨⟨W, R⟩, V⟩,
+  rcases M with ⟨⟨W, _, R⟩, V⟩,
   simp
 end
 
@@ -40,7 +41,7 @@ variables {A B C : form vars}
 /-- Truth at a world -/
 @[simp]
 def eval (M : model vars) : M.F.W → form vars → Prop
-| w ⊥ := false
+| w (form.Bottom) := false
 | w ⦃x⦄ := w ∈ M.V x
 | w (~ P) := ¬ eval w P
 | w (P ⋀ Q) := eval w P ∧ eval w Q
@@ -87,7 +88,7 @@ def valid (A : form vars) := ∀ M : model vars, M ⊩ A
 
 /-- A formula is modal-free if it contains no modal operator, i.e. □ -/
 def modal_free : form vars → Prop
-| ⊥ := true
+| form.Bottom := true
 | ⦃_⦄ := true
 | ~ A := modal_free A
 | (A ⋀ B) := modal_free A ∧ modal_free B
@@ -101,7 +102,7 @@ by truth-value assignments.
 Learning point: recursing over two arguments to ensure that we can rule out 
 the modality. -/
 def eval_modal_free (v : vars → Prop) : ∀(A : form vars), modal_free A → Prop
-| ⊥ _ := false
+| form.Bottom _ := false
 | ⦃x⦄ _ := v x
 | (~ A) hA := ¬ eval_modal_free A hA
 | (A ⋀ B) ⟨hA, hB⟩ := eval_modal_free A hA ∧ eval_modal_free B hB
