@@ -26,6 +26,7 @@ structure model (vars : Type) : Type 1 :=
   (F : frame)
   (V : vars → set F.W)
 notation `⟪` W `, ` R `, ` V `⟫` := model.mk (frame.mk W R) V 
+notation `⟪` F `, ` V `⟫` := model.mk F V
 
 @[ext]
 lemma model_ext {vars : Type} (M : model vars)
@@ -85,6 +86,10 @@ exact hAB hA
 end
 
 def valid (A : form vars) := ∀ M : model vars, M ⊩ A
+
+/- The following development of tautological instances is subsumed by a more
+general proof when I talk about schemas, so I don't talk about it in the report.
+I still learned something out of it though, so I'll leave it in. -/
 
 /-- A formula is modal-free if it contains no modal operator, i.e. □ -/
 def modal_free : form vars → Prop

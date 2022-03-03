@@ -48,6 +48,7 @@ def subst (vars : Type) : Type := alist (λ _ : vars, form vars)
 -- can't resolve these implicitly for some reason, even after importing.
 instance : has_mem vars (subst vars) := alist.has_mem
 instance : has_emptyc (subst vars) := alist.has_emptyc
+instance : has_union (subst vars) := alist.has_union
 
 def subst.get (s : subst vars) (x : vars) : form vars := 
 (s.lookup x).get_or_else ⦃x⦄
@@ -72,32 +73,4 @@ begin
   case form.And : A B ihA ihB { simp [subst.apply, ihA, ihB] },
   case form.Or : A B ihA ihB { simp [subst.apply, ihA, ihB] },
   case form.Imply : A B ihA ihB { simp [subst.apply, ihA, ihB] }
-end
-
-theorem subst.apply_not_var (s : subst vars) {A : form vars} (hA : ∀ x, A ≠ ⦃x⦄) 
-  : ∀ y, subst.apply s A ≠ ⦃y⦄ :=
-begin
-  intro y,
-  induction A,
-  case form.Bottom { exact hA y },
-  case form.Var    { exfalso, specialize hA A, simp at hA, exact hA },
-  case form.Not    { simp [subst.apply] },
-  case form.Box    { simp [subst.apply] },
-  case form.And    { simp [subst.apply] },
-  case form.Or     { simp [subst.apply] },
-  case form.Imply  {simp [subst.apply] }
-end
-
-theorem subst.apply_not_not (s : subst vars) {A : form vars} (hA : ∀ x, A ≠ ~ x) 
-  : ∀ y, subst.apply s A ≠ ~ y :=
-begin
-  intro y,
-  induction A,
-  case form.Bottom { exact hA y },
-  case form.Var    {  },
-  case form.Not    { simp [subst.apply] },
-  case form.Box    { simp [subst.apply] },
-  case form.And    { simp [subst.apply] },
-  case form.Or     { simp [subst.apply] },
-  case form.Imply  {simp [subst.apply] }
 end

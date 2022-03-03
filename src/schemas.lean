@@ -4,7 +4,7 @@ import data.list.alist
 import data.subtype
 
 variables {vars : Type} [denumerable vars]
-variables {A B C : form vars}
+variables {A B C : form vars} {p q r : vars}
 
 /-- A schema is the set of substitution instances of some formula A. A is called
 the *characteristic* formula of the schema, which is unique up to a renaming of
@@ -22,6 +22,9 @@ def rename (vars : Type) [decidable_eq vars] : Type :=
 
 def rename.apply (r : rename vars) := subst.apply (r.val)
 
+def rename.union (r₁ r₂ : rename vars) : rename vars := ⟨r₁.val ∪ r₂.val, sorry⟩
+
+instance : has_union (rename vars) := ⟨rename.union⟩
 instance : has_mem vars (rename vars) := ⟨λ x r, x ∈ r.val⟩
 instance : has_emptyc (rename vars) := ⟨⟨∅, by simp⟩⟩
 
@@ -48,54 +51,8 @@ begin
   }
 end
 
--- terrible, terrible proof
--- instance rename_to_subst (vars : Type) [decidable_eq vars] 
--- : has_coe (rename vars) (subst vars) := 
--- { coe := λ ⟨r, p⟩, { 
---     entries := list.map (sigma.map id (λ _, form.Var)) r.entries,
---     nodupkeys := begin
---       cases r,
---       dsimp only,
---       induction r_entries,
---       case list.nil { simp },
---       case list.cons : head tail ih {
---         simp only [list.map, list.nodupkeys_cons] at ⊢ r_nodupkeys,
---         split,
---         { simp only [sigma.map, id.def, list.not_mem_keys],
---           intro A,
---           simp only [list.mem_map, sigma.exists, not_exists, not_and],
---           intros x rx hmemtail,
---           simp only [sigma.map, id.def, heq_iff_eq, not_and],
---           intro hx,
---           rw hx at hmemtail,
---           rw list.not_mem_keys at r_nodupkeys,
---           exfalso,
---           exact r_nodupkeys.left rx hmemtail
---         },
---         { rcases r_nodupkeys with ⟨hnmemtail, r_nodupkeys⟩,
---           apply ih r_nodupkeys,
---           intros x y hxy,
---           specialize p x y,
---           simp only [alist.lookup] at ⊢ p hxy,
---           intros hxmemtail hymemtail,
---           simp only [list.lookup_is_some, 
---                       list.keys_cons, 
---                       list.mem_cons_iff] at hxmemtail hymemtail p,
---           have hx := ne_of_mem_of_not_mem hxmemtail hnmemtail,
---           have hy := ne_of_mem_of_not_mem hymemtail hnmemtail,
---           simp [list.lookup_cons_ne _ _ hx, list.lookup_cons_ne _ _ hy] at p,
---           specialize p hxy,
---           apply p,
---           { right, exact hxmemtail },          
---           { right, exact hymemtail }
---         },
---       }
---   end
---   }
--- }
-
 theorem schema.characteristic_unique_up_to_renaming (h : schema A = schema B) 
-  : ∃ (r₁ : rename vars), r₁.apply A = B :=
+  : ∃ (r : rename vars), r.apply A = B :=
 begin
   simp [set.ext_iff, schema] at h,
   induction A generalizing B,
@@ -105,21 +62,24 @@ begin
     cases h.mpr ⟨∅, subst.apply_empty_id⟩ with _ this,
     exact ⟨∅, this⟩,
   },
-  case form.Var {
+  case form.Var : a {
     cases B,
     case form.Var : b {
-      set r : rename vars := ⟨⟨[⟨A, ⦃b⦄⟩], (by simp)⟩, by {
+      -- the renaming just takes variable a to b
+      set r : rename vars := ⟨⟨[⟨a, ⦃b⦄⟩], (by simp)⟩, by {
         simp [alist.lookup],
-        intros x y hxy,
-        { intros hx hy, transitivity A, exact hx, symmetry, exact hy },
+        intros x y hxy hx hy,
+        rw [hx, hy]
       }⟩ with hr,
       use r,
       simp [rename.apply, subst.apply, subst.get, alist.lookup, hr,
             sigma.map, list.lookup],
     },
     all_goals {
+      -- If B is some connective, then it cannot be
+      -- substituted to become ⦃A⦄, which contradicts h
       exfalso,
-      cases (h ⦃A⦄).mp ⟨∅, subst.apply_empty_id⟩ with s this,
+      cases (h ⦃a⦄).mp ⟨∅, subst.apply_empty_id⟩ with s this,
       simp only [subst.apply] at this,
       exact this
     },
@@ -127,7 +87,6 @@ begin
   case form.Not : A ih {
     cases B,
     case form.Not : b {
-      -- rcases hB with ⟨b, rfl⟩,
       simp only [rename.apply, subst.apply] at ⊢ h,
       -- Now we know that the variable x in h has to be of the form (~ x), which
       -- means we can simplify it to the following:
@@ -148,16 +107,74 @@ begin
       simp only [subst.apply] at this,
       exact this
     },
-     all_goals {
-       -- If B is some other connective, then it cannot be
-       -- substituted to become ~A, which contradicts h
+    all_goals {
       exfalso,
       cases (h (~A)).mp ⟨∅, subst.apply_empty_id⟩ with s this,
       simp only [subst.apply] at this,
-      exact this,
+      exact this
     }
   },
-  sorry,
+  case form.And : A₁ A₂ ih₁ ih₂  {
+    cases B,
+    case form.And : B₁ B₂ {
+      simp only [rename.apply, subst.apply] at ⊢ h,
+      -- Now we know that the variable x in h has to be of the form (x₁ ⋀ x₂), 
+      -- which means we can simplify it to the following:
+      have : ∀ (x₁ x₂ : form vars), 
+        (∃ (s : subst vars), s.apply A₁ = x₁ ∧ s.apply A₂ = x₂) ↔ 
+        (∃ (s : subst vars), s.apply B₁ = x₁ ∧ s.apply B₂ = x₂),
+        intros x₁ x₂,
+        specialize h (x₁ ⋀ x₂),
+        simp only at h,
+        exact h,
+      have hAB₁ : ∀ (x : form vars),
+        (∃ (s : subst vars), s.apply A₁ = x) ↔
+        (∃ (s : subst vars), s.apply B₁ = x),
+        intros x,
+        split,
+        { rintro ⟨sA₁, hA₁⟩,
+          obtain ⟨sB₁, hB₁, _⟩ := (this x (sA₁.apply A₂)).mp ⟨sA₁, hA₁, rfl⟩,
+          exact ⟨sB₁, hB₁⟩
+        },
+        { rintro ⟨sB₁, hB₁⟩,
+          obtain ⟨sA₁, hA₁, _⟩ := (this x (sB₁.apply B₂)).mpr ⟨sB₁, hB₁, rfl⟩,
+          exact ⟨sA₁, hA₁⟩
+        },
+      have hAB₂ : ∀ (x : form vars),
+        (∃ (s : subst vars), s.apply A₂ = x) ↔
+        (∃ (s : subst vars), s.apply B₂ = x),
+        intros x,
+        split,
+        { rintro ⟨sA₂, hA₂⟩,
+          obtain ⟨sB₂, _, hB₂⟩ := (this (sA₂.apply A₁) x).mp ⟨sA₂, rfl, hA₂⟩,
+          exact ⟨sB₂, hB₂⟩
+        },
+        { rintro ⟨sB₂, hB₂⟩,
+          obtain ⟨sA₂, _, hA₂⟩ := (this (sB₂.apply B₁) x).mpr ⟨sB₂, rfl, hB₂⟩,
+          exact ⟨sA₂, hA₂⟩
+        },
+      obtain ⟨r₁, hr₁⟩ := ih₁ hAB₁,
+      obtain ⟨r₂, hr₂⟩ := ih₂ hAB₂,
+      use r₁ ∪ r₂,
+      split,
+      simp [has_union.union, rename.union, subst.apply],
+      sorry, sorry
+    },
+    case form.Var {
+      exfalso,
+      cases (h ⦃B⦄).mpr ⟨∅, subst.apply_empty_id⟩ with s this,
+      simp only [subst.apply] at this,
+      exact this
+    },
+    all_goals {
+      exfalso,
+      cases (h (A₁ ⋀ A₂)).mp ⟨∅, subst.apply_empty_id⟩ with s this,
+      simp only [subst.apply] at this,
+      exact this
+    }
+  },
+  -- the remaining connectives will have basically the same proof as either
+  -- form.Not or form.And
   sorry,
   sorry,
   sorry,
@@ -170,7 +187,7 @@ notation M ` ⊭ ` S := ¬ eval_schema M S
 def valid_schema (S : set (form vars)) :=
 ∀ M : model vars, M ⊨ S
 
-example : valid_schema (schema (□ (A ⟹ B) ⟹ □ A ⟹ □ B)) :=
+example : valid_schema (schema (□ (⦃p⦄ ⟹ ⦃q⦄) ⟹ □ ⦃p⦄ ⟹ □ ⦃q⦄)) :=
 begin
   intros M C hC w,
   simp only [schema, subst.apply, set.mem_set_of_eq] at hC,
@@ -181,7 +198,8 @@ begin
   exact hAB w' hrel (hA w' hrel)
 end
 
-lemma eval_instance_iff_eval {A : form vars} {W : Type} [nonempty W] {R : W → W → Prop} {V V' : vars → set W} {w : W} 
+lemma eval_instance_iff_eval {A : form vars} {W : Type} [nonempty W] 
+{R : W → W → Prop} {V V' : vars → set W} {w : W} 
 {s : subst vars} (hM' : ∀ x, V' x = {w | ⟪W, R, V⟫ @@ w ⊩ s.get x}) 
 : (⟪W, R, V⟫ @@ w ⊩ s.apply A) ↔ (⟪W, R, V'⟫ @@ w ⊩ A)
 := begin
@@ -217,7 +235,7 @@ substitutions over arbitrary formulas, not just tautologies. -/
 theorem valid_schema_iff_valid : valid_schema (schema A) ↔ valid A :=
 begin
   split,
-  -- the mp direction is easy since A must be in its own schema.
+  -- the left-to-right direction is easy since A must be in its own schema.
   { intros hv M w, exact hv M A ⟨∅, subst.apply_empty_id⟩ w },
   rintros hv ⟨⟨W, hnonempty, R⟩, V⟩ A' ⟨s, rfl⟩ w,
   resetI,
@@ -264,7 +282,7 @@ theorem characteristic_true_but_schema_not_true {p : vars}
   : (myM ⊩ ⦃p⦄) ∧ (myM ⊭ schema ⦃p⦄) :=
 begin
   split,
-  { rintro ⟨⟩, simp [myM.V p, eval], },
+  { rintro ⟨⟩, simp only [eval], tauto }, -- hint told me to use tauto 
   { simp only [eval_schema, not_forall, exists_prop], 
     use ⊥,
     split,
@@ -274,7 +292,8 @@ begin
 end
 
 /-- Classes of models defined by a property of their frames. -/
-def ℂ (F_prop : ∀ {W : Type}, (W → W → Prop) → Prop) : set (model vars) := {M | F_prop M.F.R}
+def ℂ (F_prop : ∀ {W : Type}, (W → W → Prop) → Prop) : set (model vars) := 
+{M | F_prop M.F.R}
 
 /- The following are some example classes that contain models with particular 
 frame properties. -/
@@ -298,8 +317,8 @@ def ℂ_valid (ℂ : set (model vars)) (A : form vars) :=
 def ℂ_schema_valid (ℂ : set (model vars)) (𝕊 : set (form vars)) :=
 ∀ M ∈ ℂ, M ⊨ 𝕊
 
-/-- We can then modify the proof of valid_schema_iff_valid to adapt it to 
-class validity, but only for classes constructed by ℂ -/
+/-- We can modify the proof of valid_schema_iff_valid to adapt it to 
+class validity, but only for classes constructed by ℂ. -/
 theorem class_valid_schema_iff_class_valid 
 {F_prop : ∀ {W : Type}, (W → W → Prop) → Prop} 
 : ℂ_schema_valid (ℂ @F_prop) (schema A) ↔ ℂ_valid (ℂ @F_prop) A :=
@@ -328,15 +347,15 @@ begin
   exact h this,
 end
 
-/- There is a vague sense in which the formula R ≡ p ⟹ ◇ p "characterizes"
+/- There is a vague sense in which the formula T ≡ □ p ⟹ p "characterizes"
 models with reflexive relations. Semantically T reads that if p holds in this 
 world, then p holds in some related world. In general, this holds iff the 
 accessibility relation is reflexive, since the only world we can guarantee to
 have p hold is the current one. We can see one direction of the correspondence
-via the following theorem of validity: for any model, if it is reflexive, then R holds in the 
-model. -/
+via the following theorem of validity: for any model, if it is reflexive, then T
+holds in the model. -/
 
-theorem R_is_ℂ_valid_reflexive {p : vars} 
+theorem T_is_ℂ_valid_reflexive {p : vars} 
 : ℂ_valid ℂ_reflexive (□ ⦃p⦄ ⟹ ⦃p⦄) := 
 begin
   unfold ℂ_valid,
@@ -347,19 +366,20 @@ begin
   exact hbA w (hM w)
 end
 
-/- However, the converse doesn't hold: when R holds in a model, it is not 
+/- However, the converse doesn't hold: when T holds in a model, it is not 
 necessarily reflexive. This is because we can have specific valuations that
-make it trivial to prove the statement. So, the statement is true by virtue of the valuation, not the frame. For example, in a model where the
-antecedent p is never true. -/
+make it trivial to prove the statement. So, the statement is true by virtue of 
+the valuation, not the frame. For example, in a model where the antecedent p is
+never true. -/
 
 def myM' : model vars := {
   F := {
     W := unit,
-    R := λ _ _, false }, -- the frame relation doesn't matter
-  V := λ x, {} -- every variable is true at the one and only world
+    R := λ _ _, false }, -- the frame relation is not reflexive
+  V := λ x, {} -- no variable is ever true at any world
 }
 
-theorem R_true_in_non_reflexive_model {p : vars} 
+theorem T_true_in_non_reflexive_model {p : vars} 
 : (myM' ⊩ ⦃p⦄ ⟹ ◇⦃p⦄) ∧ (myM' ∉ @ℂ_reflexive vars _) :=
 begin
   split,
@@ -371,28 +391,7 @@ end
 we are reasoning about classes of models. Instead, we should work with classes
 of frames and work from there. This is done in src/frame_definability.lean. -/
 
-theorem K_is_ℂ_valid_all 
-  : ℂ_valid ℂ_all (□ (A ⟹ B) ⟹ □ A ⟹ □ B) :=
-begin
-  unfold ℂ_valid,
-  intros M hM w,
-  unfold eval,
-  intros hbAB hbA w' hrel,
-  specialize hbAB w' hrel,
-  specialize hbA w' hrel,
-  exact hbAB hbA
-end
-
-example : ℂ_valid ℂ_reflexive (□ (□ A ⟹ A)) :=
-begin
-  simp only [ℂ_valid, set.mem_inter_eq],
-  intros M hrefl w,
-  unfold eval,
-  intros w' hrel hbA,
-  apply hbA,
-  simp only [ℂ_reflexive, set.mem_set_of_eq] at hrefl,
-  exact hrefl w'
-end
+/- The following are some small theorems about class validity. -/
 
 theorem box_class_valid_of_class_valid {C : set (model vars)}
 (hvA : ℂ_valid C A) : ℂ_valid C (□ A) :=
